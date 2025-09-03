@@ -1069,21 +1069,40 @@
                 
                 button.disabled = true;
                 button.textContent = '📍 Obteniendo ubicación...';
-                showLoading('Obteniendo ubicación GPS...');
+                
+                // Show GPS status indicator immediately
+                const statusIndicator = document.getElementById('gpsStatusIndicator');
+                const statusIcon = document.getElementById('gpsStatusIcon');
+                const statusText = document.getElementById('gpsStatusText');
+                const coordinates = document.getElementById('gpsCoordinates');
+                
+                statusIndicator.className = 'mt-3 p-3 rounded-lg bg-blue-100 border border-blue-200';
+                statusIcon.textContent = '📍';
+                statusText.textContent = 'Obteniendo ubicación GPS...';
+                coordinates.textContent = 'Esperando respuesta del GPS...';
+                statusIndicator.classList.remove('hidden');
                 
                 try {
-                    // Request location with high accuracy
+                    // Request location with timeout handling
                     const position = await new Promise((resolve, reject) => {
+                        const timeoutId = setTimeout(() => {
+                            reject(new Error('Tiempo de espera agotado (10 segundos). Intenta nuevamente.'));
+                        }, 10000);
+                        
                         navigator.geolocation.getCurrentPosition(
-                            (pos) => resolve(pos),
+                            (pos) => {
+                                clearTimeout(timeoutId);
+                                resolve(pos);
+                            },
                             (error) => {
+                                clearTimeout(timeoutId);
                                 let errorMessage = 'Error desconocido al obtener ubicación';
                                 switch(error.code) {
                                     case error.PERMISSION_DENIED:
                                         errorMessage = 'Permiso de ubicación denegado. Por favor permite el acceso a tu ubicación en el navegador.';
                                         break;
                                     case error.POSITION_UNAVAILABLE:
-                                        errorMessage = 'Ubicación no disponible. Verifica que tengas GPS activado.';
+                                        errorMessage = 'Ubicación no disponible. Verifica que tengas GPS activado y estés en un lugar con buena señal.';
                                         break;
                                     case error.TIMEOUT:
                                         errorMessage = 'Tiempo de espera agotado. Intenta nuevamente.';
@@ -1093,8 +1112,8 @@
                             },
                             {
                                 enableHighAccuracy: true,
-                                timeout: 15000,
-                                maximumAge: 0
+                                timeout: 8000,
+                                maximumAge: 30000
                             }
                         );
                     });
@@ -1115,34 +1134,37 @@
                         neighborhoodField.value = 'Centro'; // Default neighborhood
                     }
                     
-                    // Show GPS status indicator
-                    const statusIndicator = document.getElementById('gpsStatusIndicator');
-                    const statusIcon = document.getElementById('gpsStatusIcon');
-                    const statusText = document.getElementById('gpsStatusText');
-                    const coordinates = document.getElementById('gpsCoordinates');
-                    
+                    // Update GPS status indicator to success
                     statusIndicator.className = 'mt-3 p-3 rounded-lg bg-green-100 border border-green-200';
                     statusIcon.textContent = '✅';
                     statusText.textContent = 'Ubicación GPS capturada correctamente';
                     coordinates.textContent = `Coordenadas: ${lat}, ${lng} (±${Math.round(position.coords.accuracy)}m)`;
-                    statusIndicator.classList.remove('hidden');
                     
                     button.textContent = '✅ Ubicación GPS obtenida';
+                    button.className = 'bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors text-sm w-full';
                     
-                    await showModal(`Ubicación GPS obtenida correctamente!\n\nCoordenadas: ${lat}, ${lng}\nPrecisión: ±${Math.round(position.coords.accuracy)}m\n\nPuedes editar la dirección si lo deseas.`, 'Ubicación Obtenida', 'success');
+                    await showModal(`¡Ubicación GPS obtenida correctamente!\n\nCoordenadas: ${lat}, ${lng}\nPrecisión: ±${Math.round(position.coords.accuracy)} metros\n\nPuedes editar la dirección si lo deseas antes de registrar el empleado.`, 'Ubicación Obtenida', 'success');
                     
+                    // Reset button after 5 seconds
                     setTimeout(() => {
                         button.textContent = originalText;
+                        button.className = 'bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors text-sm w-full';
                         button.disabled = false;
-                    }, 3000);
+                    }, 5000);
                     
                 } catch (error) {
                     console.error('GPS Error:', error);
-                    await showModal(error.message + '\n\nPuedes ingresar la dirección manualmente.', 'Error GPS', 'error');
+                    
+                    // Update GPS status indicator to error
+                    statusIndicator.className = 'mt-3 p-3 rounded-lg bg-red-100 border border-red-200';
+                    statusIcon.textContent = '❌';
+                    statusText.textContent = 'Error al obtener ubicación';
+                    coordinates.textContent = error.message;
+                    
+                    await showModal(error.message + '\n\nPuedes ingresar la dirección manualmente en los campos de arriba.', 'Error GPS', 'error');
+                    
                     button.textContent = originalText;
                     button.disabled = false;
-                } finally {
-                    hideLoading();
                 }
             });
         }
@@ -1486,6 +1508,9 @@
                 document.getElementById('empState').value = 'Montevideo'; // Reset department
                 document.getElementById('empLatitude').value = ''; // Clear GPS coordinates
                 document.getElementById('empLongitude').value = ''; // Clear GPS coordinates
+                
+                // Hide GPS status indicator
+                document.getElementById('gpsStatusIndicator').classList.add('hidden');
                 
                 await showModal('Empleado registrado correctamente con ubicación asignada', 'Registro Exitoso', 'success');
                 loadEmployeeSelects();
@@ -2168,490 +2193,4 @@
                             <thead class="bg-gray-50">
                                 <tr>
                                     <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
-                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Empleado</th>
-                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-gray-200">
-                `;
-                
-                const sortedOldRecords = oldRecords.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-                
-                sortedOldRecords.slice(0, 50).forEach(record => {
-                    const date = new Date(record.timestamp);
-                    html += `
-                        <tr>
-                            <td class="px-3 py-2 whitespace-nowrap text-gray-900">${date.toLocaleDateString('es-ES')}</td>
-                            <td class="px-3 py-2 whitespace-nowrap text-gray-900">${record.employeeName}</td>
-                            <td class="px-3 py-2 whitespace-nowrap">
-                                <span class="px-2 py-1 text-xs rounded-full ${record.type === 'in' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
-                                    ${record.type === 'in' ? 'Entrada' : 'Salida'}
-                                </span>
-                            </td>
-                        </tr>
-                    `;
-                });
-                
-                if (oldRecords.length > 50) {
-                    html += `
-                        <tr>
-                            <td colspan="3" class="px-3 py-2 text-center text-gray-500 italic">
-                                ... y ${oldRecords.length - 50} registros más
-                            </td>
-                        </tr>
-                    `;
-                }
-                
-                html += '</tbody></table></div>';
-                previewContent.innerHTML = html;
-            }
-            
-            previewContainer.classList.remove('hidden');
-        }
-
-        // Database Management Functions
-        function loadDatabaseSection() {
-            updateDatabaseStats();
-        }
-
-        function updateDatabaseStats() {
-            document.getElementById('dbEmployeeCount').textContent = employees.length.toLocaleString();
-            document.getElementById('dbAttendanceCount').textContent = attendanceRecords.length.toLocaleString();
-            
-            // Calculate database size
-            const totalData = {
-                employees: employees,
-                attendanceRecords: attendanceRecords,
-                adminConfig: adminConfig,
-                cleanupConfig: cleanupConfig
-            };
-            const dataSize = JSON.stringify(totalData).length;
-            const sizeKB = Math.round(dataSize / 1024);
-            document.getElementById('dbSize').textContent = sizeKB + ' KB';
-            
-            // Last update time
-            const lastUpdate = localStorage.getItem('lastDatabaseUpdate') || new Date().toISOString();
-            document.getElementById('dbLastUpdate').textContent = new Date(lastUpdate).toLocaleString('es-ES');
-        }
-
-        async function exportDatabase() {
-            showLoading('Exportando base de datos...');
-            
-            try {
-                const databaseExport = {
-                    version: '1.0',
-                    exportDate: new Date().toISOString(),
-                    system: 'EntradaYA Control de Asistencia',
-                    data: {
-                        employees: employees,
-                        attendanceRecords: attendanceRecords,
-                        adminConfig: {
-                            ...adminConfig,
-                            password: '[PROTEGIDO]' // Don't export actual password
-                        },
-                        cleanupConfig: cleanupConfig
-                    },
-                    metadata: {
-                        employeeCount: employees.length,
-                        attendanceCount: attendanceRecords.length,
-                        totalSize: JSON.stringify({employees, attendanceRecords, adminConfig, cleanupConfig}).length
-                    }
-                };
-                
-                const dataStr = JSON.stringify(databaseExport, null, 2);
-                const dataBlob = new Blob([dataStr], {type: 'application/json'});
-                
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(dataBlob);
-                link.download = `entradaya_database_${new Date().toISOString().split('T')[0]}.db`;
-                link.click();
-                
-                // Update last export time
-                localStorage.setItem('lastDatabaseUpdate', new Date().toISOString());
-                updateDatabaseStats();
-                
-                await showModal('✅ Base de datos exportada correctamente', 'Exportación Exitosa', 'success');
-                
-            } catch (error) {
-                await showModal('Error al exportar base de datos: ' + error.message, 'Error de Exportación', 'error');
-            } finally {
-                hideLoading();
-            }
-        }
-
-        async function exportJSON() {
-            showLoading('Exportando datos JSON...');
-            
-            try {
-                const jsonExport = {
-                    employees: employees,
-                    attendanceRecords: attendanceRecords,
-                    exportDate: new Date().toISOString()
-                };
-                
-                const dataStr = JSON.stringify(jsonExport, null, 2);
-                const dataBlob = new Blob([dataStr], {type: 'application/json'});
-                
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(dataBlob);
-                link.download = `entradaya_data_${new Date().toISOString().split('T')[0]}.json`;
-                link.click();
-                
-                await showModal('✅ Datos JSON exportados correctamente', 'Exportación Exitosa', 'success');
-                
-            } catch (error) {
-                await showModal('Error al exportar JSON: ' + error.message, 'Error de Exportación', 'error');
-            } finally {
-                hideLoading();
-            }
-        }
-
-        async function importDatabase() {
-            const fileInput = document.getElementById('importFile');
-            const file = fileInput.files[0];
-            
-            if (!file) {
-                await showModal('Por favor selecciona un archivo para importar', 'Archivo Requerido', 'warning');
-                return;
-            }
-            
-            const confirmImport = await showConfirmModal(
-                `⚠️ ADVERTENCIA: Importar datos reemplazará TODA la información actual del sistema.\n\n¿Estás seguro de continuar?`,
-                'Confirmar Importación'
-            );
-            
-            if (!confirmImport) return;
-            
-            showLoading('Importando base de datos...');
-            
-            try {
-                const fileContent = await file.text();
-                const importData = JSON.parse(fileContent);
-                
-                // Validate import data structure
-                if (importData.data) {
-                    // Full database export format
-                    if (importData.data.employees) employees = importData.data.employees;
-                    if (importData.data.attendanceRecords) attendanceRecords = importData.data.attendanceRecords;
-                    if (importData.data.cleanupConfig) cleanupConfig = importData.data.cleanupConfig;
-                    // Note: adminConfig password is not imported for security
-                } else if (importData.employees && importData.attendanceRecords) {
-                    // Simple JSON format
-                    employees = importData.employees;
-                    attendanceRecords = importData.attendanceRecords;
-                } else {
-                    throw new Error('Formato de archivo no válido');
-                }
-                
-                // Save imported data
-                localStorage.setItem('employees', JSON.stringify(employees));
-                localStorage.setItem('attendanceRecords', JSON.stringify(attendanceRecords));
-                localStorage.setItem('cleanupConfig', JSON.stringify(cleanupConfig));
-                localStorage.setItem('lastDatabaseUpdate', new Date().toISOString());
-                
-                // Update UI
-                updateDatabaseStats();
-                loadEmployeeSelects();
-                
-                // Clear file input
-                fileInput.value = '';
-                
-                await showModal('✅ Base de datos importada correctamente', 'Importación Exitosa', 'success');
-                
-            } catch (error) {
-                await showModal('Error al importar base de datos: ' + error.message, 'Error de Importación', 'error');
-            } finally {
-                hideLoading();
-            }
-        }
-
-        async function clearDatabase() {
-            const firstConfirm = await showConfirmModal(
-                '⚠️ ADVERTENCIA: Esta acción eliminará TODOS los datos del sistema.\n\n¿Estás seguro?',
-                'Confirmar Limpieza Total'
-            );
-            
-            if (!firstConfirm) return;
-            
-            const finalConfirm = await showConfirmModal(
-                '🚨 CONFIRMACIÓN FINAL: Se eliminarán:\n• Todos los empleados\n• Todos los registros de asistencia\n• Configuración de limpieza\n\n¿CONTINUAR?',
-                'Confirmación Final'
-            );
-            
-            if (!finalConfirm) return;
-            
-            showLoading('Limpiando base de datos...');
-            
-            try {
-                // Clear all data
-                employees = [];
-                attendanceRecords = [];
-                cleanupConfig = {
-                    enabled: true,
-                    periodDays: 90,
-                    lastCleanup: null,
-                    nextCleanup: null
-                };
-                
-                // Clear localStorage
-                localStorage.removeItem('employees');
-                localStorage.removeItem('attendanceRecords');
-                localStorage.removeItem('cleanupConfig');
-                localStorage.setItem('lastDatabaseUpdate', new Date().toISOString());
-                
-                // Update UI
-                updateDatabaseStats();
-                loadEmployeeSelects();
-                document.getElementById('databaseViewer').innerHTML = '<p class="text-gray-600 text-center">Base de datos limpiada - Sin datos</p>';
-                
-                await showModal('✅ Base de datos limpiada completamente', 'Limpieza Exitosa', 'success');
-                
-            } catch (error) {
-                await showModal('Error al limpiar base de datos: ' + error.message, 'Error de Limpieza', 'error');
-            } finally {
-                hideLoading();
-            }
-        }
-
-        function viewDatabaseTable(table) {
-            const viewer = document.getElementById('databaseViewer');
-            
-            switch(table) {
-                case 'employees':
-                    if (employees.length === 0) {
-                        viewer.innerHTML = '<p class="text-gray-600 text-center">No hay empleados registrados</p>';
-                    } else {
-                        let html = `
-                            <h5 class="font-semibold text-gray-900 mb-3">👥 Tabla: Empleados (${employees.length} registros)</h5>
-                            <div class="overflow-x-auto max-h-64">
-                                <table class="min-w-full divide-y divide-gray-200 text-xs">
-                                    <thead class="bg-gray-100">
-                                        <tr>
-                                            <th class="px-2 py-1 text-left font-medium text-gray-700">ID</th>
-                                            <th class="px-2 py-1 text-left font-medium text-gray-700">Nombre</th>
-                                            <th class="px-2 py-1 text-left font-medium text-gray-700">Departamento</th>
-                                            <th class="px-2 py-1 text-left font-medium text-gray-700">Puesto</th>
-                                            <th class="px-2 py-1 text-left font-medium text-gray-700">Ubicación</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-gray-200">
-                        `;
-                        
-                        employees.forEach(emp => {
-                            html += `
-                                <tr class="hover:bg-gray-50">
-                                    <td class="px-2 py-1 text-gray-900">${emp.id}</td>
-                                    <td class="px-2 py-1 text-gray-900">${emp.name}</td>
-                                    <td class="px-2 py-1 text-gray-900">${emp.department}</td>
-                                    <td class="px-2 py-1 text-gray-900">${emp.position}</td>
-                                    <td class="px-2 py-1 text-gray-600">${emp.workLocation ? emp.workLocation.neighborhood : 'Sin asignar'}</td>
-                                </tr>
-                            `;
-                        });
-                        
-                        html += '</tbody></table></div>';
-                        viewer.innerHTML = html;
-                    }
-                    break;
-                    
-                case 'attendance':
-                    if (attendanceRecords.length === 0) {
-                        viewer.innerHTML = '<p class="text-gray-600 text-center">No hay registros de asistencia</p>';
-                    } else {
-                        const recentRecords = attendanceRecords.slice(-50).reverse(); // Last 50 records
-                        let html = `
-                            <h5 class="font-semibold text-gray-900 mb-3">📋 Tabla: Asistencias (${attendanceRecords.length} registros - Mostrando últimos 50)</h5>
-                            <div class="overflow-x-auto max-h-64">
-                                <table class="min-w-full divide-y divide-gray-200 text-xs">
-                                    <thead class="bg-gray-100">
-                                        <tr>
-                                            <th class="px-2 py-1 text-left font-medium text-gray-700">Fecha</th>
-                                            <th class="px-2 py-1 text-left font-medium text-gray-700">Hora</th>
-                                            <th class="px-2 py-1 text-left font-medium text-gray-700">Empleado</th>
-                                            <th class="px-2 py-1 text-left font-medium text-gray-700">ID</th>
-                                            <th class="px-2 py-1 text-left font-medium text-gray-700">Tipo</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-gray-200">
-                        `;
-                        
-                        recentRecords.forEach(record => {
-                            const date = new Date(record.timestamp);
-                            html += `
-                                <tr class="hover:bg-gray-50">
-                                    <td class="px-2 py-1 text-gray-900">${date.toLocaleDateString('es-ES')}</td>
-                                    <td class="px-2 py-1 text-gray-900">${date.toLocaleTimeString('es-ES')}</td>
-                                    <td class="px-2 py-1 text-gray-900">${record.employeeName}</td>
-                                    <td class="px-2 py-1 text-gray-900">${record.employeeId}</td>
-                                    <td class="px-2 py-1">
-                                        <span class="px-1 py-0.5 text-xs rounded ${record.type === 'in' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
-                                            ${record.type === 'in' ? 'Entrada' : 'Salida'}
-                                        </span>
-                                    </td>
-                                </tr>
-                            `;
-                        });
-                        
-                        html += '</tbody></table></div>';
-                        viewer.innerHTML = html;
-                    }
-                    break;
-                    
-                case 'config':
-                    let html = `
-                        <h5 class="font-semibold text-gray-900 mb-3">⚙️ Tabla: Configuración del Sistema</h5>
-                        <div class="space-y-4">
-                            <div class="bg-white p-3 rounded border">
-                                <h6 class="font-medium text-gray-800 mb-2">Configuración de Administrador</h6>
-                                <div class="text-xs text-gray-600 space-y-1">
-                                    <div>Contraseña por defecto: ${adminConfig.isDefault ? 'Sí' : 'No'}</div>
-                                    <div>Contraseña encriptada: ${adminConfig.password.length === 64 ? 'Sí' : 'No'}</div>
-                                </div>
-                            </div>
-                            <div class="bg-white p-3 rounded border">
-                                <h6 class="font-medium text-gray-800 mb-2">Configuración de Limpieza Automática</h6>
-                                <div class="text-xs text-gray-600 space-y-1">
-                                    <div>Estado: ${cleanupConfig.enabled ? 'Activada' : 'Desactivada'}</div>
-                                    <div>Período: ${cleanupConfig.periodDays} días</div>
-                                    <div>Última limpieza: ${cleanupConfig.lastCleanup ? new Date(cleanupConfig.lastCleanup).toLocaleString('es-ES') : 'Nunca'}</div>
-                                    <div>Próxima limpieza: ${cleanupConfig.nextCleanup ? new Date(cleanupConfig.nextCleanup).toLocaleString('es-ES') : 'No programada'}</div>
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    viewer.innerHTML = html;
-                    break;
-                    
-                default:
-                    viewer.innerHTML = '<p class="text-gray-600 text-center">Tabla no encontrada</p>';
-            }
-        }
-
-        async function checkDatabaseIntegrity() {
-            showLoading('Verificando integridad de datos...');
-            
-            try {
-                const results = [];
-                let issues = 0;
-                
-                // Check employees data integrity
-                const employeeIssues = [];
-                employees.forEach((emp, index) => {
-                    if (!emp.id || !emp.name || !emp.department || !emp.position) {
-                        employeeIssues.push(`Empleado ${index + 1}: Campos obligatorios faltantes`);
-                        issues++;
-                    }
-                    if (!emp.workLocation) {
-                        employeeIssues.push(`Empleado ${emp.name}: Sin ubicación de trabajo asignada`);
-                        issues++;
-                    }
-                });
-                
-                // Check for duplicate employee IDs
-                const employeeIds = employees.map(emp => emp.id);
-                const duplicateIds = employeeIds.filter((id, index) => employeeIds.indexOf(id) !== index);
-                if (duplicateIds.length > 0) {
-                    employeeIssues.push(`IDs duplicados encontrados: ${duplicateIds.join(', ')}`);
-                    issues++;
-                }
-                
-                // Check attendance records integrity
-                const attendanceIssues = [];
-                attendanceRecords.forEach((record, index) => {
-                    if (!record.employeeId || !record.employeeName || !record.type || !record.timestamp) {
-                        attendanceIssues.push(`Registro ${index + 1}: Campos obligatorios faltantes`);
-                        issues++;
-                    }
-                    
-                    // Check if employee exists
-                    const employeeExists = employees.some(emp => emp.id === record.employeeId);
-                    if (!employeeExists) {
-                        attendanceIssues.push(`Registro ${index + 1}: Empleado ${record.employeeId} no existe`);
-                        issues++;
-                    }
-                });
-                
-                // Check data consistency
-                const consistencyIssues = [];
-                const totalDataSize = JSON.stringify({employees, attendanceRecords, adminConfig, cleanupConfig}).length;
-                if (totalDataSize > 5 * 1024 * 1024) { // 5MB
-                    consistencyIssues.push('Base de datos grande (>5MB) - Considera limpiar registros antiguos');
-                }
-                
-                // Generate report
-                let reportHtml = `
-                    <div class="space-y-3">
-                        <div class="flex items-center justify-between">
-                            <h6 class="font-semibold text-gray-900">Resultado de Verificación</h6>
-                            <span class="px-2 py-1 text-xs rounded-full ${issues === 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
-                                ${issues === 0 ? '✅ Sin problemas' : `⚠️ ${issues} problema(s)`}
-                            </span>
-                        </div>
-                `;
-                
-                if (employeeIssues.length > 0) {
-                    reportHtml += `
-                        <div class="bg-red-50 p-3 rounded">
-                            <h6 class="font-medium text-red-800 mb-2">👥 Problemas en Empleados:</h6>
-                            <ul class="text-xs text-red-700 space-y-1">
-                                ${employeeIssues.map(issue => `<li>• ${issue}</li>`).join('')}
-                            </ul>
-                        </div>
-                    `;
-                }
-                
-                if (attendanceIssues.length > 0) {
-                    reportHtml += `
-                        <div class="bg-orange-50 p-3 rounded">
-                            <h6 class="font-medium text-orange-800 mb-2">📋 Problemas en Asistencias:</h6>
-                            <ul class="text-xs text-orange-700 space-y-1">
-                                ${attendanceIssues.map(issue => `<li>• ${issue}</li>`).join('')}
-                            </ul>
-                        </div>
-                    `;
-                }
-                
-                if (consistencyIssues.length > 0) {
-                    reportHtml += `
-                        <div class="bg-yellow-50 p-3 rounded">
-                            <h6 class="font-medium text-yellow-800 mb-2">⚠️ Advertencias:</h6>
-                            <ul class="text-xs text-yellow-700 space-y-1">
-                                ${consistencyIssues.map(issue => `<li>• ${issue}</li>`).join('')}
-                            </ul>
-                        </div>
-                    `;
-                }
-                
-                if (issues === 0 && consistencyIssues.length === 0) {
-                    reportHtml += `
-                        <div class="bg-green-50 p-3 rounded">
-                            <p class="text-green-800 text-sm">✅ La base de datos está en perfecto estado</p>
-                            <div class="text-xs text-green-700 mt-2 space-y-1">
-                                <div>• ${employees.length} empleados verificados</div>
-                                <div>• ${attendanceRecords.length} registros de asistencia verificados</div>
-                                <div>• Configuración del sistema correcta</div>
-                            </div>
-                        </div>
-                    `;
-                }
-                
-                reportHtml += '</div>';
-                
-                document.getElementById('integrityResults').innerHTML = reportHtml;
-                
-            } catch (error) {
-                document.getElementById('integrityResults').innerHTML = `
-                    <div class="bg-red-50 p-3 rounded">
-                        <p class="text-red-800 text-sm">❌ Error al verificar integridad: ${error.message}</p>
-                    </div>
-                `;
-            } finally {
-                hideLoading();
-            }
-        }
-
-        // Make deleteEmployeeConfirm available globally
-        window.deleteEmployeeConfirm = deleteEmployeeConfirm;
-    </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'979323bdc3641eba',t:'MTc1Njg4MDQwOS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
-</html>
+                                    <th class="px-3 py-2<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'97937f71a17169a7',t:'MTc1Njg4NDE2NS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
